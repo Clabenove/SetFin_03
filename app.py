@@ -173,143 +173,12 @@ def mascara_comodin_rapida(df_ref, col_name):
     return df_ref[col_name].isin(COMODINES_EXACTOS).to_numpy()
 
 
-def diagnosticar_nombre_bep(nombre_archivo):
-    if not str(nombre_archivo).lower().endswith(".ifc"):
-        return "❌ No tiene extensión .ifc"
-    base = str(nombre_archivo)[:-4]
-    partes = base.split("_")
-    if len(partes) != 7:
-        return (
-            f"❌ Estructura incorrecta: tiene {len(partes)} "
-            "bloques separados por '_' (se esperan 7)"
-        )
-    puerto, contrato, fase, tipo, disc, desc, rev = partes
-    errores = []
-    if puerto.upper() not in ["V", "S", "G"]:
-        errores.append(f"Bloque 1 Puerto ('{puerto}'): debe ser V, S o G")
-    if contrato.upper() != "N035":
-        if contrato.upper() == "NO35":
-            errores.append(
-                "Bloque 2 Contrato ('NO35'): tiene letra 'O' en lugar "
-                "del número '0' (debe ser N035)"
-            )
-        else:
-            errores.append(f"Bloque 2 Contrato ('{contrato}'): debe ser 'N035'")
-    if fase.upper() != "OB":
-        if fase == "0B":
-            errores.append(
-                "Bloque 3 Fase ('0B'): tiene un cero '0' en vez "
-                "de la letra 'O' (debe ser 'OB')"
-            )
-        else:
-            errores.append(f"Bloque 3 Fase ('{fase}'): debe ser 'OB'")
-    if not re.match(r"^[A-Za-z]{3}$", tipo):
-        errores.append(
-            f"Bloque 4 Tipo ('{tipo}'): debe tener 3 letras (ej. MOD, SEG)"
-        )
-    if not re.match(r"^[A-Za-z]{3}$", disc):
-        errores.append(f"Bloque 5 Disciplina ('{disc}'): debe tener 3 letras")
-    if not re.match(r"^[A-Za-z0-9\-]+$", desc):
-        errores.append(f"Bloque 6 Descripción ('{desc}'): caracteres inválidos")
-    if not re.match(r"^\d{2}[A-Za-z]$", rev):
-        errores.append(
-            f"Bloque 7 Revisión ('{rev}'): debe ser 2 dígitos + 1 letra"
-        )
-    if not errores:
-        return "✅ Cumple patrón BEP"
-    return "❌ No cumple: " + " | ".join(errores)
-
-
-def sugerir_nombre_bep(nombre_archivo):
-    if not str(nombre_archivo).lower().endswith(".ifc"):
-        return "V_N035_OB_MOD_EST_Proyecto_01A.ifc"
-    base = str(nombre_archivo)[:-4]
-    partes = base.split("_")
-    puerto = (
-        partes[0]
-        if len(partes) > 0 and partes[0].upper() in ["V", "S", "G"]
-        else "V"
-    )
-    contrato = "N035"
-    fase = "OB"
-    tipo = (
-        partes[3]
-        if len(partes) > 3 and re.match(r"^[A-Za-z]{3}$", partes[3])
-        else "MOD"
-    )
-    disc = (
-        partes[4]
-        if len(partes) > 4 and re.match(r"^[A-Za-z]{3}$", partes[4])
-        else "EST"
-    )
-    desc = (
-        re.sub(r"[^A-Za-z0-9\-]", "", partes[5])
-        if len(partes) > 5 else "Proyecto"
-    )
-    if not desc:
-        desc = "Proyecto"
-    rev = (
-        partes[6]
-        if len(partes) > 6 and re.match(r"^\d{2}[A-Za-z]$", partes[6])
-        else "01A"
-    )
-    return (
-        f"{puerto.upper()}_{contrato}_{fase}_"
-        f"{tipo.upper()}_{disc.upper()}_{desc}_{rev.upper()}.ifc"
-    )
-
-
-def generar_xml_navisworks(
-    valores_unicos,
-    nombre_set="Auditoria_APV_Elementos_Vacios",
-    usar_id_nativo=False
-):
-    schema_url = (
-        "http://download.autodesk.com/us/navisworks/schemas/"
-        "nw-exchange-12.0.xsd"
-    )
-    prop_name = "Id" if usar_id_nativo else "GlobalId"
-    xml = '<?xml version="1.0" encoding="UTF-8" ?>\n'
-    xml += (
-        '<exchange xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" '
-        f'xsi:noNamespaceSchemaLocation="{schema_url}" units="m">\n'
-    )
-    xml += '  <selectionsets>\n'
-    xml += f'    <selectionset name="{nombre_set}">\n'
-    xml += '      <findspec mode="some" disjoint="0">\n'
-    xml += '        <conditions>\n'
-    for val in valores_unicos[:1000]:
-        xml += '          <condition test="equals" flags="10">\n'
-        xml += f'            <property><name>{prop_name}</name></property>\n'
-        xml += f'            <value><data type="wstring">{val}</data></value>\n'
-        xml += '          </condition>\n'
-    xml += '        </conditions>\n'
-    xml += '        <locator>/</locator>\n'
-    xml += '      </findspec>\n'
-    xml += '    </selectionset>\n'
-    xml += '  </selectionsets>\n'
-    xml += '</exchange>'
-    return xml
-
-
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RUTA_PARQUET = os.path.join(BASE_DIR, "resumen_ifc_consolidado.parquet")
 
 if not os.path.isfile(RUTA_PARQUET):
     st.error(f"No se encuentra el archivo: {RUTA_PARQUET}")
     st.stop()
-# --- EJECUCIÓN DEL MOTOR DE CACHÉ APV ---
-(
-    df_original, archivos_disp, df_informe_grupos,
-    pres_base_arr, vac_base_arr, pres_all_arr, vac_all_arr,
-    vac_nw_base_arr, vac_nw_all_arr, matriz_presencia_nw,
-    arch_codes_global, max_pres_modelo_arr
-) = inicializar_motor_apv(RUTA_PARQUET)
-
-# Detectar automáticamente si la columna de ID nativo es Revit (ExpressId) o Civil 3D (Handle)
-col_id_nativo = "ExpressId" if "ExpressId" in df_original.columns else "ID_Elemento"
-if col_id_nativo not in df_original.columns and len(df_original.columns) > 0:
-    col_id_nativo = df_original.columns[0]
 
 
 @st.cache_resource(show_spinner="Cargando e indexando base de datos BIM...")
@@ -317,7 +186,6 @@ def inicializar_motor_apv(ruta):
     t0 = time.perf_counter()
     print("[DIAG 1] Leyendo archivo Parquet en modo optimizado...", flush=True)
     
-    # Lectura optimizada con PyArrow asegurando bajo consumo de memoria
     import pyarrow.parquet as pq
     table_pq = pq.read_table(ruta)
     df_raw = table_pq.to_pandas(split_blocks=True, self_destruct=True)
@@ -332,7 +200,6 @@ def inicializar_motor_apv(ruta):
         flush=True
     )
 
-    # Convertir columnas clave a categorías para ahorrar RAM masivamente
     if "Archivo_Origen" in df_raw.columns:
         df_raw["Archivo_Origen"] = df_raw["Archivo_Origen"].astype("category")
     if "Clase_IFC" in df_raw.columns:
@@ -442,7 +309,19 @@ def inicializar_motor_apv(ruta):
         vac_nw_base, vac_nw_all, matriz_presencia_mod,
         arch_codes_safe, max_pres_fila_arr
     )
-# --- BARRA LATERAL ---
+
+
+# Ejecución y desempaquetado del motor
+(
+    df_original, archivos_disp, df_informe_grupos,
+    pres_base_arr, vac_base_arr, pres_all_arr, vac_all_arr,
+    vac_nw_base_arr, vac_nw_all_arr, matriz_presencia_nw,
+    arch_codes_global, max_pres_modelo_arr
+) = inicializar_motor_apv(RUTA_PARQUET)
+
+col_id_nativo = "ExpressId" if "ExpressId" in df_original.columns else "ID_Elemento"
+if col_id_nativo not in df_original.columns and len(df_original.columns) > 0:
+    col_id_nativo = df_original.columns[0]# --- BARRA LATERAL ---
 st.sidebar.header("⚙ Filtros de Auditoría")
 
 modo_real_navisworks = st.sidebar.checkbox(
