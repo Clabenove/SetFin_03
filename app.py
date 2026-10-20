@@ -1470,14 +1470,30 @@ with tab10:
         "(Inspector BIM Sincronizado con Navisworks)"
     )
     st.markdown(
-        "Selecciona un elemento de la lista desplegable o **copia y pega "
+        "Selecciona el modelo IFC de origen y un elemento, o **copia y pega "
         "directamente su `GlobalId` o `ID_Elemento`** para auditar los "
         "parámetros APV que muestra Navisworks."
     )
 
-    ids_disponibles_t10 = (
-        df_original.loc[mask_arr, "GlobalId"].dropna().unique()[:5000]
-    )
+    # 1. Selector de archivo de origen (modelo IFC) mediante un desplegable
+    modelos_disponibles_t10 = sorted(df_original.loc[mask_arr, "Archivo_Origen"].dropna().unique().tolist())
+    
+    col_mod_sel, col_empty = st.columns([2, 2])
+    with col_mod_sel:
+        archivo_seleccionado_t10 = st.selectbox(
+            "1️⃣ Selecciona el Archivo de Origen (Modelo IFC):",
+            options=["TODOS LOS MODELOS"] + modelos_disponibles_t10,
+            index=0,
+            key="select_ficha_archivo"
+        )
+
+    # Filtrar el DataFrame según el modelo elegido en el desplegable
+    if archivo_seleccionado_t10 != "TODOS LOS MODELOS":
+        df_filtrado_t10 = df_original.loc[mask_arr & (df_original["Archivo_Origen"] == archivo_seleccionado_t10)]
+    else:
+        df_filtrado_t10 = df_original.loc[mask_arr]
+
+    ids_disponibles_t10 = df_filtrado_t10["GlobalId"].dropna().unique()[:5000]
 
     col_sel10, col_paste10 = st.columns(2)
     with col_sel10:
@@ -1487,14 +1503,14 @@ with tab10:
                 np.where(ids_disponibles_t10 == "3H0KjjMnv619yNSGbFXGIK")[0][0]
             )
         id_seleccionado_lista = st.selectbox(
-            "Selecciona un GlobalId de la lista:",
-            options=ids_disponibles_t10,
-            index=idx_default_10,
+            "2️⃣ O selecciona un GlobalId de la lista:",
+            options=ids_disponibles_t10 if len(ids_disponibles_t10) >  0 else ["No hay elementos"],
+            index=idx_default_10 if len(ids_disponibles_t10) > 0 else 0,
             key="select_ficha_globalid"
         )
     with col_paste10:
         id_pegado_texto = st.text_input(
-            "📋 O copia y pega aquí cualquier GlobalId o ID_Elemento:",
+            "3️⃣ O copia y pega aquí cualquier GlobalId o ID_Elemento (editable):",
             value="",
             placeholder="Pega aquí ej: 3H0KjjMnv619yNSGbFXGIK o #168987",
             key="paste_ficha_id"
@@ -1502,29 +1518,30 @@ with tab10:
 
     elem_df_match = pd.DataFrame()
     criterio_usado = ""
+    
     if id_pegado_texto.strip():
         q10 = id_pegado_texto.strip()
         criterio_usado = q10
         m_exact = (
-            (df_original["GlobalId"].astype(str) == q10)
-            | (df_original[col_id_nativo].astype(str) == q10)
+            (df_filtrado_t10["GlobalId"].astype(str) == q10)
+            | (df_filtrado_t10[col_id_nativo].astype(str) == q10)
         )
         if m_exact.any():
-            elem_df_match = df_original.loc[m_exact]
+            elem_df_match = df_filtrado_t10.loc[m_exact]
         else:
             m_part = (
-                df_original["GlobalId"].astype(str).str.contains(
+                df_filtrado_t10["GlobalId"].astype(str).str.contains(
                     q10, case=False, na=False
                 )
-                | df_original[col_id_nativo].astype(str).str.contains(
+                | df_filtrado_t10[col_id_nativo].astype(str).str.contains(
                     q10, case=False, na=False
                 )
             )
-            elem_df_match = df_original.loc[m_part]
-    elif len(ids_disponibles_t10) > 0:
+            elem_df_match = df_filtrado_t10.loc[m_part]
+    elif len(ids_disponibles_t10) > 0 and id_seleccionado_lista != "No hay elementos":
         criterio_usado = str(id_seleccionado_lista)
-        elem_df_match = df_original.loc[
-            df_original["GlobalId"] == id_seleccionado_lista
+        elem_df_match = df_filtrado_t10.loc[
+            df_filtrado_t10["GlobalId"] == id_seleccionado_lista
         ]
 
     if not elem_df_match.empty:
@@ -1679,7 +1696,7 @@ with tab10:
     else:
         st.error(
             f"❌ No se encontró ningún elemento con el identificador "
-            f"`{criterio_usado}` en la base de datos."
+            f"`{criterio_usado}` en el archivo o modelo seleccionado."
         )
 
 # --- PESTAÑA 11 ---
