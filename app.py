@@ -603,10 +603,10 @@ else:
     )
     peso_total = 0.0
 
-# --- LAS 14 PESTAÑAS ---
+# --- LAS 15 PESTAÑAS ---
 (
     tab1, tab2, tab3, tab4, tab5, tab6, tab7,
-    tab8, tab9, tab10, tab11, tab12, tab13, tab14
+    tab8, tab9, tab10, tab11, tab12, tab13, tab14, tab15
 ) = st.tabs([
     "📖 1. Cumplimiento BEP Naming",
     "🌍 2. Georreferenciación",
@@ -621,7 +621,8 @@ else:
     "💬 11. Asistente IA",
     "📄 12. Resumen Ejecutivo & PDF",
     "📈 13. Control Avance Mensual",
-    "🏗️ 14. Coherencia 4D/5D/6D"
+    "🏗️ 14. Coherencia 4D/5D/6D",
+    "📊 15. Cuadro de Control APV"
 ])
 
 # --- PESTAÑA 1 ---
@@ -1465,36 +1466,43 @@ with tab9:
 
 # --- PESTAÑA 10 ---
 with tab10:
-    st.subheader(
-        "🔍 10. Ficha Detallada por Elemento "
-        "(Inspector BIM Sincronizado con Navisworks)"
-    )
+    st.subheader("🔍 10. Ficha Detallada por Elemento (Inspector BIM)")
     st.markdown(
-        "Selecciona un elemento de la lista desplegable o **copia y pega "
-        "directamente su `GlobalId` o `ID_Elemento`** para auditar los "
-        "parámetros APV que muestra Navisworks."
+        "Selecciona primero el **Modelo IFC** y luego elige en el desplegable "
+        "o **copia y pega directamente su `GlobalId` o `ID_Elemento`** "
+        "para auditar todos sus parámetros APV al detalle."
     )
 
+    modelos_disponibles_t10 = sorted(
+        df_original.loc[mask_arr, "Archivo_Origen"].dropna().unique().tolist()
+    )
+
+    c_m10, c_sel10, c_paste10 = st.columns([2, 2, 2])
+    with c_m10:
+        modelo_seleccionado_t10 = st.selectbox(
+            "1️⃣ Seleccionar Modelo IFC:",
+            options=modelos_disponibles_t10,
+            key="t10_modelo_filter"
+        )
+
+    mask_modelo_t10 = (
+        mask_arr & (df_original["Archivo_Origen"] == modelo_seleccionado_t10)
+    )
     ids_disponibles_t10 = (
-        df_original.loc[mask_arr, "GlobalId"].dropna().unique()[:5000]
+        df_original.loc[mask_modelo_t10, "GlobalId"].dropna().unique()[:5000]
     )
 
-    col_sel10, col_paste10 = st.columns(2)
-    with col_sel10:
+    with c_sel10:
         idx_default_10 = 0
-        if "3H0KjjMnv619yNSGbFXGIK" in ids_disponibles_t10:
-            idx_default_10 = int(
-                np.where(ids_disponibles_t10 == "3H0KjjMnv619yNSGbFXGIK")[0][0]
-            )
         id_seleccionado_lista = st.selectbox(
-            "Selecciona un GlobalId de la lista:",
+            "2️⃣ Seleccionar GlobalId del modelo:",
             options=ids_disponibles_t10,
             index=idx_default_10,
             key="select_ficha_globalid"
         )
-    with col_paste10:
+    with c_paste10:
         id_pegado_texto = st.text_input(
-            "📋 O copia y pega aquí cualquier GlobalId o ID_Elemento:",
+            "3️⃣ O pega aquí cualquier GlobalId o ID_Elemento:",
             value="",
             placeholder="Pega aquí ej: 3H0KjjMnv619yNSGbFXGIK o #168987",
             key="paste_ficha_id"
@@ -1524,7 +1532,7 @@ with tab10:
     elif len(ids_disponibles_t10) > 0:
         criterio_usado = str(id_seleccionado_lista)
         elem_df_match = df_original.loc[
-            df_original["GlobalId"] == id_seleccionado_lista
+            mask_modelo_t10 & (df_original["GlobalId"] == id_seleccionado_lista)
         ]
 
     if not elem_df_match.empty:
@@ -1567,7 +1575,7 @@ with tab10:
             params_ficha_elem = params_auditar
 
         with st.expander(
-            f"📋 Ficha Detallada del Elemento en Navisworks: {guid_actual}",
+            f"📋 Ficha Detallada del Elemento: {guid_actual}",
             expanded=True
         ):
             col_f1, col_f2, col_f3 = st.columns(3)
@@ -1608,11 +1616,11 @@ with tab10:
                         est_p = "🟡 Comodín BEP (-)"
                     else:
                         n_datos_elem += 1
-                        est_p = "🟢 Relleno en Navisworks (OK)"
+                        est_p = "🟢 Relleno (OK)"
                     filas_ficha.append({
                         "Grupo BEP": p.split("_")[0],
                         "Parámetro BEP": p,
-                        "Valor en Navisworks": (
+                        "Valor Actual": (
                             "" if pd.isna(val_p) else str(val_p)
                         ),
                         "Estado": est_p
@@ -1623,7 +1631,7 @@ with tab10:
                     1
                 )
                 st.metric(
-                    "Parámetros Vacíos (Navisworks)",
+                    "Parámetros APV Vacíos",
                     n_vacios_elem,
                     delta=f"{pct_obj}% Cumplimiento",
                     delta_color="inverse"
@@ -1636,14 +1644,14 @@ with tab10:
 
             st.markdown(
                 "##### 📊 Auditoría Individual de Parámetros "
-                "(Vista Real Navisworks):"
+                "APV de este Objeto:"
             )
             filtro_vista_ficha = st.radio(
                 "Filtrar parámetros de la ficha:",
                 options=[
-                    "🟢 Solo Parámetros Rellenos / Comodín (Visibles en Navisworks)",
-                    "Todos los Parámetros del Modelo",
-                    "🔴 Solo Parámetros Vacíos (Que Fallan)"
+                    "Todos los Parámetros",
+                    "🔴 Solo Parámetros Vacíos (Que Fallan)",
+                    "🟢 Solo Parámetros Rellenos / Comodín"
                 ],
                 horizontal=True,
                 key="t10_radio_filtro"
@@ -1679,137 +1687,113 @@ with tab10:
     else:
         st.error(
             f"❌ No se encontró ningún elemento con el identificador "
-            f"`{criterio_usado}` en la base de datos."
+            f"`{criterio_usado}` en el modelo seleccionado."
         )
-
-# --- PESTAÑA 11 ---
+# --- PESTAÑA 11 (ASISTENTE IA GENERATIVO Y PRÁCTICO) ---
 with tab11:
-    st.subheader("💬 11. Asistente IA de Entrega y Auditoría BIM - APV")
+    st.subheader("💬 11. Asistente IA Generativo & Consultor BIM - APV")
     st.markdown(
-        "Haz preguntas en lenguaje natural sobre tu entrega: **qué modelos "
-        "tienen más errores, qué parámetros faltan, estado de un archivo "
-        "`.ifc` específico, proxies, pesos o reglas del BEP**."
+        "Este asistente analiza en tiempo real tu base de datos y **genera tablas, "
+        "cuadros de entregables, matrices de cumplimiento y checklists** según lo que le pidas en lenguaje natural."
     )
 
-    if "messages" not in st.session_state:
-        st.session_state.messages = [
+    if "messages_gen" not in st.session_state:
+        st.session_state.messages_gen = [
             {
                 "role": "assistant",
                 "content": (
-                    f"¡Hola Claudia! Estoy conectado en vivo a los "
-                    f"**{len(sel_archivos)} modelos IFC** (**{total_el:,} "
-                    "elementos sincronizados con Navisworks**). "
-                    "Puedes preguntarme cosas como:\n"
-                    "- *¿Cuáles son los 5 parámetros que más fallan?*\n"
-                    "- *¿Qué pasa con el modelo CoDrag2VLC?*\n"
-                    "- *¿Cuántos proxies hay y en qué modelos están?*\n"
-                    "- *¿Cumplimos la regla de avance respecto al mes anterior?*"
+                    f"¡Hola Claudia! Estoy listo para asistirte con los **{len(sel_archivos)} modelos IFC** "
+                    f"(**{total_el:,} elementos**). Pruebamé pidiéndome cosas como:\n"
+                    "- *'Genera una tabla con el estado de cada modelo'* \n"
+                    "- *'Dame un cuadro con los 10 parámetros que más fallan y sus vacíos'\n"
+                    "- *'Crea un checklist de entregables BIM para el contrato N035'\n"
+                    "- *'Haz una tabla resumen de los elementos proxies por modelo'*"
                 )
             }
         ]
 
-    for message in st.session_state.messages:
+    for message in st.session_state.messages_gen:
         with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+            st.markdown(message["content"], unsafe_allow_html=True)
 
-    if prompt := st.chat_input(
-        "Escribe tu consulta sobre la entrega BIM de la APV..."
-    ):
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
+    with st.form(key="chat_generativo_apv", clear_on_submit=True):
+        prompt_gen = st.text_input(
+            "🤖 ¿Qué tabla, entregable o análisis necesitas que genere?",
+            placeholder="Ej: Genera una tabla con el estado de los modelos y sus porcentajes..."
+        )
+        enviar_gen = st.form_submit_button("Generar con IA ⚡")
 
-        with st.chat_message("assistant"):
-            p_low = prompt.lower()
-            top_vacios_ia = df_res_vacios.sort_values(
-                "Vacíos (Error)", ascending=False
-            ).head(5)
+    if enviar_gen and prompt_gen.strip():
+        st.session_state.messages_gen.append({"role": "user", "content": prompt_gen})
+        
+        q = prompt_gen.lower()
+        respuesta_gen = ""
 
-            if "codrag" in p_low or "drag2vlc" in p_low:
-                respuesta = (
-                    "Sobre el modelo **`CoDrag2VLC`**: en Navisworks ves sus "
-                    "parámetros llenos porque Navisworks lee automáticamente "
-                    "la herencia desde el **Tipo (`IfcTypeObject`)** y desde "
-                    "el **Contenedor Padre (`IfcSite` / `IfcElementAssembly`)**. "
-                    "Al regenerar el `.parquet` con el script `convertidor_ifc.py` "
-                    "optimizado, `CoDrag2VLC` incorpora todos sus parámetros."
-                )
-            elif any(
-                k in p_low for k in [
-                    "parametro", "parámetro", "fallan",
-                    "peor", "critico", "crítico"
-                ]
-            ):
-                lineas_p = "\n".join([
-                    f"- **`{r['Parámetro Oficial APV']}`**: faltan "
-                    f"**{r['Vacíos (Error)']:,}** elementos "
-                    f"({r['% Cumplimiento (Dato + \'-\')']}% cumplido)."
-                    for _, r in top_vacios_ia.iterrows()
-                ])
-                respuesta = (
-                    "Los **5 parámetros oficiales APV con más vacíos reales "
-                    f"en Navisworks** en esta entrega son:\n\n{lineas_p}\n\n"
-                    "💡 *Puedes ir a la **Pestaña 5** y seleccionar cualquiera "
-                    "de ellos para ver exactamente qué elementos son.*"
-                )
-            elif any(
-                k in p_low for k in ["proxy", "proxies", "generico", "genérico"]
-            ):
-                respuesta = (
-                    f"Actualmente se detectan **{n_proxys:,} elementos "
-                    "`IfcBuildingElementProxy`** en los modelos seleccionados. "
-                    "En la **Pestaña 3** tienes el buscador para filtrarlos."
-                )
-            elif any(k in p_low for k in ["formato", "unidad", "estado"]):
-                n_arch_err = (
-                    df_err_fmt_total["Archivo"].nunique()
-                    if not df_err_fmt_total.empty else 0
-                )
-                respuesta = (
-                    "En la auditoría estricta de formato (**Pestaña 4**) "
-                    f"se han detectado **{len(df_err_fmt_total):,} infracciones** "
-                    f"repartidas en **{n_arch_err} modelos IFC**."
-                )
-            elif any(
-                k in p_low for k in [
-                    "mes", "anterior", "avance", "regresion", "regresión"
-                ]
-            ):
-                estado_reg = (
-                    "✅ CUMPLE"
-                    if len(sel_archivos) >= umbral_mes_anterior
-                    else "🚨 INCUMPLE"
-                )
-                respuesta = (
-                    f"Respecto al control de avance mensual: tienes "
-                    f"**{len(sel_archivos)} modelos activos** frente al umbral "
-                    f"de **{umbral_mes_anterior} modelos** del mes anterior "
-                    f"(**{estado_reg}** la regla de no-regresión)."
-                )
-            else:
-                pct_global_ia = (
-                    round(
-                        float(df_res_vacios["% Cumplimiento (Dato + '-')"].mean()),
-                        1
-                    )
-                    if not df_res_vacios.empty else 0.0
-                )
-                respuesta = (
-                    "**Resumen en vivo de tu entrega APV "
-                    "(Sincronizado con Navisworks):**\n"
-                    f"- **Modelos IFC auditados:** {len(sel_archivos)} "
-                    f"archivos ({round(peso_total, 2)} MB)\n"
-                    f"- **Elementos reales auditados:** {total_el:,} objetos\n"
-                    f"- **Cumplimiento medio en Navisworks:** {pct_global_ia}%\n"
-                    f"- **Elementos con algún vacío real:** {n_inc_total:,}\n"
-                    f"- **Infracciones de formato:** {len(df_err_fmt_total):,}"
-                )
-
-            st.markdown(respuesta)
-            st.session_state.messages.append(
-                {"role": "assistant", "content": respuesta}
+        # Intento 1: Generar tabla de modelos / estado
+        if any(k in q for k in ["tabla modelo", "estado modelo", "resumen modelo", "tabla de modelo", "estado de cada modelo"]):
+            df_m_gen = grp_mod_exec[["Archivo_Origen", "Dictamen Técnico", "Naming BEP", "Elementos", "Proxies", "% Cumplimiento BEP"]].copy()
+            df_m_gen.columns = ["Modelo IFC", "Dictamen", "Naming BEP", "Elementos", "Proxies", "% Cumplimiento"]
+            md_tabla = df_m_gen.to_markdown(index=False)
+            respuesta_gen = (
+                "### 📊 Cuadro Generado: Estado de Modelos IFC\n\n"
+                f"He procesado los datos de tu selección actual:\n\n{md_tabla}\n\n"
+                "💡 *Puedes copiar esta tabla o revisarla en detalle en la Pestaña 12.*"
             )
 
+        # Intento 2: Generar tabla de parámetros críticos / vacíos
+        elif any(k in q for k in ["parametro", "parámetro", "fallan", "vacios", "vacíos", "critico", "crítico"]):
+            df_p_gen = df_res_vacios.sort_values("Vacíos (Error)", ascending=False).head(15)[
+                ["Parámetro Oficial APV", "Estado Auditoría", "Con Dato Real", "Con Comodín (-) Válido", "Vacíos (Error)", "% Cumplimiento (Dato + '-')"]
+            ].copy()
+            md_p = df_p_gen.to_markdown(index=False)
+            respuesta_gen = (
+                "### 🚨 Top Parámetros APV con Mayor Incumplimiento\n\n"
+                f"Aquí tienes la tabla detallada con los parámetros que requieren corrección:\n\n{md_p}\n\n"
+                "💡 *Recuerda que puedes generar un XML de Search Sets para Navisworks en la Pestaña 6 con estos elementos.*"
+            )
+
+        # Intento 3: Generar tabla de Proxies
+        elif any(k in q for k in ["proxy", "proxies", "generico", "genérico"]):
+            sub_t3_gen = df_original[["Archivo_Origen", "Clase_IFC"]].loc[mask_arr]
+            df_prox_gen = sub_t3_gen[sub_t3_gen["Clase_IFC"] == "IfcBuildingElementProxy"].groupby("Archivo_Origen").size().reset_index(name="Cantidad Proxies")
+            md_prox = df_prox_gen.to_markdown(index=False)
+            respuesta_gen = (
+                "### 🧱 Cuadro Generado: Elementos IfcBuildingElementProxy (Genéricos)\n\n"
+                f"Distribución de objetos genéricos por modelo en la entrega:\n\n{md_prox}\n\n"
+                "💡 *Se recomienda solicitar a la UTE la reclasificación semántica de estos elementos en el modelo nativo.*"
+            )
+
+        # Intento 4: Checklist o Guía de Entregables
+        elif any(k in q for k in ["checklist", "entregable", "guía", "guia", "hito", "bep"]):
+            respuesta_gen = (
+                "### ✅ Checklist Ejecutivo de Entregables BIM (Contrato N035 - APV)\n\n"
+                "| Bloque BEP / Dimensión | Requisito Contractual APV | Estado Actual en Dashboard |\n"
+                "| :--- | :--- | :--- |\n"
+                "| **01. Identificación** | Nomenclatura estricta Anejo 02 (`V_N035_OB_...`) | Verificado en **Pestaña 1** |\n"
+                "| **02. Mediciones (5D)** | Parámetros de capítulo, unidad de obra y medición | Verificado en **Pestaña 5** |\n"
+                "| **03. Calidad IFC** | Esquema IFC4/2x3 y ausencia de elementos huérfanos | Verificado en **Pestaña 3** |\n"
+                "| **04. Planificación (4D)** | Vínculo con tareas y % de ejecución | Verificado en **Pestaña 14** |\n"
+                "| **05. Georreferenciación** | Coordenadas oficiales ETRS89 en IfcSite | Verificado en **Pestaña 2** |\n"
+                "| **06. Explotación (6D)** | Códigos de mantenimiento y códigos contables | Verificado en **Pestaña 5** |\n\n"
+                "💡 *Puedes exportar el informe completo de dirección en formato PDF desde la Pestaña 12.*"
+            )
+
+        # Respuesta por defecto inteligente
+        else:
+            respuesta_gen = (
+                f"### 💡 Asistente Analítico APV\n\n"
+                f"He analizado tu consulta sobre la entrega actual (**{total_el:,} elementos**):\n\n"
+                f"- **Cumplimiento general:** `{pct_cumplimiento_global}%`\n"
+                f"- **Modelos analizados:** `{len(sel_archivos)} archivos`\n\n"
+                "Prueba a pedirme explícitamente:\n"
+                "1. *'Genera una tabla con el estado de los modelos'* \n"
+                "2. *'Dame una tabla con los parámetros que fallan'* \n"
+                "3. *'Haz una tabla de proxies'* \n"
+                "4. *'Crea un checklist de entregables'* "
+            )
+
+        st.session_state.messages_gen.append({"role": "assistant", "content": respuesta_gen})
+        st.rerun()
 # --- PESTAÑA 12 ---
 with tab12:
     fecha_actual_str = datetime.now().strftime("%d/%m/%Y %H:%M")
@@ -2407,5 +2391,106 @@ with tab14:
             st.success(
                 "✅ Cero incoherencias en esta regla para los modelos seleccionados."
             )
+# --- PESTAÑA 15 (CUADRO DE CONTROL DE ENTREGABLES IFC - FORMATO APV) ---
+with tab15:
+    st.subheader("📊 15. Cuadro de Control de Entregables IFC (Formato APV)")
+    st.markdown(
+        "Este cuadro agrupa automáticamente tus modelos IFC por **Fase, Frente y Zona**, "
+        "detectando cuando un modelo viene partido en múltiples archivos IFC. "
+        "Puedes editar cualquier celda directamente antes de exportar el Excel final."
+    )
 
-print("[DIAG FIN] Dashboard de 14 pestañas renderizado con éxito", flush=True)
+    def clasificar_modelo_apv(nombre_arch):
+        b = str(nombre_arch)[:-4] if str(nombre_arch).lower().endswith(".ifc") else str(nombre_arch)
+        b_low = b.lower()
+        
+        # Deducir Fase, Frente y Zona adaptado a la nomenclatura APV
+        if "sondeo" in b_low or "cogen" in b_low:
+            fase_txt, frente, zona = "Co", "Sondeos", "Muelle Principal"
+        elif "mecha" in b_low:
+            fase_txt, frente, zona = "Co", "Mechas", "Muelle Principal"
+        elif "pilot" in b_low:
+            fase_txt, frente, zona = "Co", "Pilotes", "DN" if "dn" in b_low else "MA"
+        elif "caj" in b_low:
+            fase_txt, frente, zona = "Co", "Cajones", "MP" if "mp" in b_low else "MA"
+        elif "jet" in b_low:
+            fase_txt, frente, zona = "Co", "Jet Grouting", "MP" if "mp" in b_low else "MA"
+        elif "cdn" in b_low or "contradique" in b_low:
+            fase_txt, frente, zona = "Co", "Contradique Norte", "CVIII"
+        elif "drag" in b_low:
+            fase_txt, frente, zona = "Co", "Dragado VLC", "Inferior MP"
+        elif "rell" in b_low:
+            fase_txt, frente, zona = "Ea", "Relleno", "Superior MP"
+        elif "banq" in b_low or "zanj" in b_low or "preca" in b_low:
+            fase_txt, frente, zona = "Tp", "Pre - Cajón / Zanjas", "MP"
+        elif "blq" in b_low or "faro" in b_low:
+            fase_txt, frente, zona = "Dm", "Bloques / Faro", "DN"
+        elif "arq" in b_low:
+            fase_txt, frente, zona = "Co", "Arquetas / Instalaciones", "General"
+        elif "pav" in b_low or "fir" in b_low:
+            fase_txt, frente, zona = "Ea", "Pavimentos y Firmes", "MC12"
+        elif "escoll" in b_low or "dique" in b_low:
+            fase_txt, frente, zona = "Ea", "Dique / Escollera", "DEE / DD"
+        elif "tp" in b_low or "precarg" in b_low:
+            fase_txt, frente, zona = "Tp", "Precargas", "Muelle Principal"
+        elif "tablest" in b_low or "geotex" in b_low:
+            fase_txt, frente, zona = "Ea", "Tablestacas / Geotextil", "General"
+        elif "exc" in b_low:
+            fase_txt, frente, zona = "Dm", "Excavación", "MA"
+        else:
+            fase_txt, frente, zona = "Co", "Obras Marítimas / General", "Muelle Principal"
+
+        if "ifc4x3" in b_low or "dwg" in b_low or "civil" in b_low:
+            sw = ".dwg / Civil 3D"
+        else:
+            sw = ".rvt / Revit"
+
+        return fase_txt, frente, zona, sw
+
+    filas_cuadro = []
+    unicos_t15 = sorted(df_original.loc[mask_arr, "Archivo_Origen"].dropna().unique().tolist())
+
+    for arch in unicos_t15:
+        fase_t, frente_t, zona_t, sw_t = clasificar_modelo_apv(arch)
+        nombre_sin_ext = str(arch)[:-4] if str(arch).lower().endswith(".ifc") else str(arch)
+        es_reciente = "2609" in nombre_sin_ext or "2608" in nombre_sin_ext
+
+        filas_cuadro.append({
+            "Fase": fase_t,
+            "Frente": frente_t,
+            "Zona": zona_t,
+            "Modelo": nombre_sin_ext[:25] + "...",
+            "IFC": nombre_sin_ext,
+            "Software": sw_t,
+            "Planos": "",
+            "Estado": "TERMINADO" if "jet" in nombre_sin_ext.lower() else "",
+            "_es_verde": es_reciente
+        })
+
+    df_cuadro_base = pd.DataFrame(filas_cuadro)
+
+    st.markdown("##### ✏️ Edición Interactiva del Cuadro (Modifica frentes, zonas o estados antes de exportar):")
+    df_editado = st.data_editor(
+        df_cuadro_base.drop(columns=["_es_verde"]),
+        use_container_width=True,
+        num_rows="dynamic",
+        key="editor_cuadro_apv"
+    )
+
+    st.markdown("---")
+
+    import io
+    output_excel = io.BytesIO()
+    with pd.ExcelWriter(output_excel, engine="openpyxl") as writer:
+        df_editado.to_excel(writer, sheet_name="SEPTIEMBRE 2026", index=False)
+    output_excel.seek(0)
+
+    st.download_button(
+        label="📊 Descargar Cuadro de Control en Formato Excel (.xlsx)",
+        data=output_excel,
+        file_name="Cuadro_Control_Entregables_APV.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True
+    )
+
+print("[DIAG FIN] Dashboard de 15 pestañas renderizado con éxito", flush=True)
