@@ -303,31 +303,15 @@ if not os.path.isfile(RUTA_PARQUET):
 @st.cache_resource(show_spinner="Cargando e indexando base de datos BIM...")
 def inicializar_motor_apv(ruta):
     t0 = time.perf_counter()
-    print("[DIAG 1] Leyendo archivo Parquet...", flush=True)
-    df_raw = pd.read_parquet(ruta, engine="pyarrow")
+    print("[DIAG 1] Leyendo archivo Parquet en modo optimizado...", flush=True)
+    
+    # Lectura optimizada con PyArrow asegurando bajo consumo de memoria
+    import pyarrow.parquet as pq
+    table_pq = pq.read_table(ruta)
+    df_raw = table_pq.to_pandas(split_blocks=True, self_destruct=True)
+    
     if df_raw.columns.duplicated().any():
         df_raw = df_raw.loc[:, ~df_raw.columns.duplicated()]
-
-    mapa_norm_oficial = {_normalizar_clave_param(p): p for p in PARAMETROS_APV}
-    mapa_sin_apv = {
-        _normalizar_clave_param(p).replace("_APV_", "_"): p
-        for p in PARAMETROS_APV
-    }
-
-    for c in list(df_raw.columns):
-        if c in PARAMETROS_APV:
-            continue
-        cn = _normalizar_clave_param(c)
-        target_p = mapa_norm_oficial.get(cn) or mapa_sin_apv.get(cn)
-        if target_p:
-            if target_p not in df_raw.columns:
-                df_raw.rename(columns={c: target_p}, inplace=True)
-            else:
-                v_dest = mascara_vacio_rapida(df_raw, target_p)
-                v_orig = mascara_vacio_rapida(df_raw, c)
-                mask_rescue = v_dest & (~v_orig)
-                if mask_rescue.any():
-                    df_raw.loc[mask_rescue, target_p] = df_raw.loc[mask_rescue, c]
 
     n_filas = len(df_raw)
     print(
@@ -336,12 +320,16 @@ def inicializar_motor_apv(ruta):
         flush=True
     )
 
+    # Convertir columnas clave a categorías para ahorrar RAM masivamente
+    if "Archivo_Origen" in df_raw.columns:
+        df_raw["Archivo_Origen"] = df_raw["Archivo_Origen"].astype("category")
+    if "Clase_IFC" in df_raw.columns:
+        df_raw["Clase_IFC"] = df_raw["Clase_IFC"].astype("category")
+
     archivos_unicos = sorted(
         df_raw["Archivo_Origen"].dropna().unique().tolist()
     )
-    arch_cat = pd.Categorical(
-        df_raw["Archivo_Origen"], categories=archivos_unicos
-    )
+    arch_cat = pd.Categorical(df_raw["Archivo_Origen"], categories=archivos_unicos)
     arch_codes = arch_cat.codes
     n_arch = max(1, len(archivos_unicos))
     valid_arch_mask = arch_codes >= 0
@@ -426,7 +414,7 @@ def inicializar_motor_apv(ruta):
             "Parámetros Visibles en Navisworks": n_params_visibles_nw,
             "Grupos Específicos Detectados": (
                 ", ".join(sorted(list(g_set))) if g_set
-                else "Ninguno (Extraer con convertidor_ifc.py optimizado)"
+                else "Ninguno"
             )
         })
     df_grupos = pd.DataFrame(info_grupos)
@@ -442,19 +430,6 @@ def inicializar_motor_apv(ruta):
         vac_nw_base, vac_nw_all, matriz_presencia_mod,
         arch_codes_safe, max_pres_fila_arr
     )
-
-
-(
-    df_original, archivos_disp, df_informe_grupos,
-    pres_base_arr, vac_base_arr, pres_all_arr, vac_all_arr,
-    vac_nw_base_arr, vac_nw_all_arr, matriz_presencia_nw,
-    arch_codes_global, max_pres_modelo_arr
-) = inicializar_motor_apv(RUTA_PARQUET)
-
-col_id_nativo = (
-    "ID_Elemento" if "ID_Elemento" in df_original.columns else "GlobalId"
-)
-
 # --- BARRA LATERAL ---
 st.sidebar.header("⚙ Filtros de Auditoría")
 
