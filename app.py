@@ -303,7 +303,7 @@ def inicializar_motor_apv(ruta):
     print("[DIAG 1] Leyendo archivo Parquet de forma segura...", flush=True)
     
     # Lectura estándar con pandas, mucho más tolerante en la nube
-    df_raw = pd.read_parquet(ruta)
+    df_raw = pd.read_parquet(RUTA_PARQUET)
     
     if df_raw.columns.duplicated().any():
         df_raw = df_raw.loc[:, ~df_raw.columns.duplicated()]
