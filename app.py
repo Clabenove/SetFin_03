@@ -308,6 +308,9 @@ conn = sqlite3.connect("banco_apv.db")
 df_raw = pd.read_sql("SELECT * FROM elementos_auditados", conn)
 conn.close()
     
+    # Ejemplo de bloque correcto
+    df_raw = pd.read_parquet(ruta)
+    
     if df_raw.columns.duplicated().any():
         df_raw = df_raw.loc[:, ~df_raw.columns.duplicated()]
 
