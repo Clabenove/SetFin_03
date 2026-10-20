@@ -4,6 +4,7 @@ import gc
 import time
 import unicodedata
 from datetime import datetime
+import io
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -257,6 +258,56 @@ def sugerir_nombre_bep(nombre_archivo):
         f"{puerto.upper()}_{contrato}_{fase}_"
         f"{tipo.upper()}_{disc.upper()}_{desc}_{rev.upper()}.ifc"
     )
+
+
+def discernir_software_origen(sub_df_modelo):
+    """
+    Discierne si un modelo IFC proviene de Autodesk Revit o Autodesk Civil 3D
+    analizando las clases IFC y nombres de elementos predominantes.
+    """
+    if sub_df_modelo.empty:
+        return "Indeterminado"
+    clases = sub_df_modelo["Clase_IFC"].dropna().astype(str).str.lower().tolist()
+    nombres_str = " ".join(
+        sub_df_modelo.get("Nombre", pd.Series(dtype=str)).dropna().astype(str).str.lower().head(200)
+    )
+    
+    # Clases típicas de Civil 3D (infraestructura, alineaciones, terrenos, tuberías de obra civil)
+    clases_civil = sum(1 for c in clases if any(k in c for k in ["alignment", "tin", "site", "geographic", "civil", "road", "pipe"]))
+    # Clases típicas de Revit (edificación, muros, puertas, ventanas, pilares estructurales)
+    clases_revit = sum(1 for c in clases if any(k in c for k in ["wall", "door", "window", "slab", "column", "beam", "roof"]))
+    
+    if "civil" in nombres_str or "surface" in nombres_str or clases_civil > clases_revit * 2:
+        return "Autodesk Civil 3D"
+    elif clases_revit > 0 or "revit" in nombres_str:
+        return "Autodesk Revit"
+    else:
+        return "Desconocido / Genérico"
+
+
+def discernir_tipo_modelo(nombre_archivo, sub_df_modelo):
+    """
+    Discierne la tipología y disciplina del modelo basándose en la nomenclatura BEP
+    y el contenido semántico.
+    """
+    nombre_low = str(nombre_archivo).lower()
+    if "geo" in nombre_low or "sondeo" in nombre_low or "terreno" in nombre_low:
+        return "Geotecnia y Ensayos (09)"
+    
+    partes = str(nombre_archivo)[:-4].split("_") if nombre_low.endswith(".ifc") else nombre_archivo.split("_")
+    disc = partes[4].upper() if len(partes) > 4 else "GEN"
+    
+    mapa_disc = {
+        "EST": "Estructura y Cimentación",
+        "ARQ": "Arquitectura y Acabados",
+        "MEC": "Instalaciones Mecánicas / HVAC",
+        "ELE": "Instalaciones Eléctricas",
+        "SAN": "Saneamiento y Drenaje",
+        "VIG": "Vialidad y Obras Liniales",
+        "SEG": "Seguridad y Salud",
+        "TOP": "Topografía y Movimiento de Tierras"
+    }
+    return mapa_disc.get(disc, f"Disciplina ({disc})")
 
 
 def generar_xml_navisworks(
@@ -603,10 +654,10 @@ else:
     )
     peso_total = 0.0
 
-# --- LAS 14 PESTAÑAS ---
+# --- LAS 15 PESTAÑAS ---
 (
     tab1, tab2, tab3, tab4, tab5, tab6, tab7,
-    tab8, tab9, tab10, tab11, tab12, tab13, tab14
+    tab8, tab9, tab10, tab11, tab12, tab13, tab14, tab15
 ) = st.tabs([
     "📖 1. Cumplimiento BEP Naming",
     "🌍 2. Georreferenciación",
@@ -618,10 +669,11 @@ else:
     "🚨 8. Alertas IFCs Vacíos",
     "📐 9. Grupos de parámetros",
     "🔍 10. Ficha por Elemento",
-    "💬 11. Asistente IA",
+    "💬 11. Asistente IA Generativo",
     "📄 12. Resumen Ejecutivo & PDF",
     "📈 13. Control Avance Mensual",
-    "🏗️ 14. Coherencia 4D/5D/6D"
+    "🏗️ 14. Coherencia 4D/5D/6D",
+    "📥 15. Exportar Excel APV & Software"
 ])
 
 # --- PESTAÑA 1 ---
@@ -1470,15 +1522,16 @@ with tab10:
         "(Inspector BIM Sincronizado con Navisworks)"
     )
     st.markdown(
-        "Selecciona el modelo IFC de origen y un elemento, o **copia y pega "
-        "directamente su `GlobalId` o `ID_Elemento`** para auditar los "
-        "parámetros APV que muestra Navisworks."
+        "Selecciona el archivo de origen (modelo IFC) mediante el desplegable, "
+        "y luego **copia y pega o selecciona su `GlobalId` o `ID_Elemento`** "
+        "para desplegar, auditar y editar sus parámetros APV."
     )
 
-    # 1. Selector de archivo de origen (modelo IFC) mediante un desplegable
-    modelos_disponibles_t10 = sorted(df_original.loc[mask_arr, "Archivo_Origen"].dropna().unique().tolist())
-    
-    col_mod_sel, col_empty = st.columns([2, 2])
+    modelos_disponibles_t10 = sorted(
+        df_original.loc[mask_arr, "Archivo_Origen"].dropna().unique().tolist()
+    )
+
+    col_mod_sel, col_empty_10 = st.columns([2, 2])
     with col_mod_sel:
         archivo_seleccionado_t10 = st.selectbox(
             "1️⃣ Selecciona el Archivo de Origen (Modelo IFC):",
@@ -1487,9 +1540,10 @@ with tab10:
             key="select_ficha_archivo"
         )
 
-    # Filtrar el DataFrame según el modelo elegido en el desplegable
     if archivo_seleccionado_t10 != "TODOS LOS MODELOS":
-        df_filtrado_t10 = df_original.loc[mask_arr & (df_original["Archivo_Origen"] == archivo_seleccionado_t10)]
+        df_filtrado_t10 = df_original.loc[
+            mask_arr & (df_original["Archivo_Origen"] == archivo_seleccionado_t10)
+        ]
     else:
         df_filtrado_t10 = df_original.loc[mask_arr]
 
@@ -1504,7 +1558,10 @@ with tab10:
             )
         id_seleccionado_lista = st.selectbox(
             "2️⃣ O selecciona un GlobalId de la lista:",
-            options=ids_disponibles_t10 if len(ids_disponibles_t10) >  0 else ["No hay elementos"],
+            options=(
+                ids_disponibles_t10
+                if len(ids_disponibles_t10) > 0 else ["No hay elementos"]
+            ),
             index=idx_default_10 if len(ids_disponibles_t10) > 0 else 0,
             key="select_ficha_globalid"
         )
@@ -1518,7 +1575,7 @@ with tab10:
 
     elem_df_match = pd.DataFrame()
     criterio_usado = ""
-    
+
     if id_pegado_texto.strip():
         q10 = id_pegado_texto.strip()
         criterio_usado = q10
@@ -1696,7 +1753,7 @@ with tab10:
     else:
         st.error(
             f"❌ No se encontró ningún elemento con el identificador "
-            f"`{criterio_usado}` en el archivo o modelo seleccionado."
+            f"`{criterio_usado}` en el modelo seleccionado."
         )
 
 # --- PESTAÑA 11 ---
@@ -1717,7 +1774,7 @@ with tab11:
                     f"**{len(sel_archivos)} modelos IFC** (**{total_el:,} "
                     "elementos sincronizados con Navisworks**). "
                     "Ahora puedes pedirme análisis complejos y tablas comparativas. Prueba con:\n"
-                    "- *Hazme una tabla comparativa del porcentaje de cumplimiento y proxies por modelo.*\n"
+                    "- *Hazme una tabla comparativa del porcentaje de cumplimiento y software origen.*\n"
                     "- *Realiza un análisis crítico de los 5 parámetros que más fallan y su impacto.*\n"
                     "- *Compárame el estado de los bloques de costes (5D) frente a planificación (4D).*\n"
                     "- *¿Qué recomendaciones me das para corregir los modelos con peor puntuación?*"
@@ -1742,18 +1799,18 @@ with tab11:
                 "Vacíos (Error)", ascending=False
             ).head(5)
 
-            # Lógica generativa ampliada para tablas comparativas y análisis complejos
             if any(k in p_low for k in ["tabla", "comparativa", "comparativo", "compara"]):
-                # Generar tabla comparativa en Markdown basada en grp_mod_exec
                 df_comp_ia = grp_mod_exec.sort_values("% Cumplimiento BEP", ascending=False)
-                markdown_table = "| Modelo IFC | Dictamen | Elementos | Proxies | % Cumplimiento |\n| :--- | :--- | :---: | :---: | :---: |\n"
+                markdown_table = "| Modelo IFC | Dictamen | Software Origen | Elementos | % Cumplimiento |\n| :--- | :--- | :--- | :---: | :---: |\n"
                 for _, r in df_comp_ia.iterrows():
-                    markdown_table += f"| `{r['Archivo_Origen']}` | {r['Dictamen Técnico']} | {r['Elementos']:,} | {int(r['Proxies']):,} | **{r['% Cumplimiento BEP']}%** |\n"
+                    sub_m = df_original.loc[df_original["Archivo_Origen"] == r["Archivo_Origen"]]
+                    soft_orig = discernir_software_origen(sub_m)
+                    markdown_table += f"| `{r['Archivo_Origen']}` | {r['Dictamen Técnico']} | {soft_orig} | {r['Elementos']:,} | **{r['% Cumplimiento BEP']}%** |\n"
                 
                 respuesta = (
-                    "### 📊 Tabla Comparativa de Modelos IFC\n"
+                    "### 📊 Tabla Comparativa Generativa de Modelos IFC\n"
                     f"A continuación, presento la comparativa analítica de los **{len(sel_archivos)} modelos activos** "
-                    "bajo los criterios de Navisworks:\n\n"
+                    "con detección de software de autoría:\n\n"
                     f"{markdown_table}\n\n"
                     "💡 *Análisis generativo:* Los modelos con menor porcentaje requieren revisión de exportación de Property Sets en origen."
                 )
@@ -1761,7 +1818,7 @@ with tab11:
             elif any(k in p_low for k in ["analisis", "análisis", "critico", "crítico", "impacto", "riesgo"]):
                 lineas_p = "\n".join([
                     f"1. **`{r['Parámetro Oficial APV']}`**: Presenta **{r['Vacíos (Error)']:,} elementos vacíos** "
-                    f"(Cumplimiento del **{r['% Cumplimiento (Dato + \'-\')']}%**). "
+                    f"(Cumplimiento del **{r['% Cumplimiento (Dato + '-')']}%**). "
                     "Su ausencia bloquea la validación automatizada en fase de obra."
                     for _, r in top_vacios_ia.iterrows()
                 ])
@@ -1771,8 +1828,8 @@ with tab11:
                     "**5 puntos más críticos** que ponen en riesgo el cumplimiento del BEP APV:\n\n"
                     f"{lineas_p}\n\n"
                     "**Plan de Mitigación Recomendado:**\n"
-                    "- Exigir a las subcontratas la cumplimentación mediante plantillas de parámetros compartidos en Revit.\n"
-                    "- Utilizar los conjuntos de selección XML (Pestaña 6) para aislar y auditar visualmente estos elementos en Navisworks."
+                    "- Exigir a las subcontratas la cumplimentación mediante plantillas de parámetros compartidos.\n"
+                    "- Utilizar los conjuntos de selección XML (Pestaña 6) para aislar estos elementos en Navisworks."
                 )
 
             elif "codrag" in p_low or "drag2vlc" in p_low:
@@ -1780,8 +1837,7 @@ with tab11:
                     "### 🔍 Informe Específico: Modelo CoDrag2VLC\n"
                     "Sobre el modelo **`CoDrag2VLC`**: en Navisworks sus parámetros se visualizan correctamente porque "
                     "el software hereda los valores desde el **Tipo (`IfcTypeObject`)** y el **Contenedor Padre**. "
-                    "Si detectas discrepancias, recuerda procesarlo con el script optimizado `convertidor_ifc.py` para asegurar "
-                    "la correcta indexación en el archivo `.parquet`."
+                    "Si detectas discrepancias, recuerda procesarlo con el script optimizado `convertidor_ifc.py`."
                 )
 
             elif any(k in p_low for k in ["proxy", "proxies", "generico", "genérico"]):
@@ -1790,18 +1846,17 @@ with tab11:
                     f"Actualmente se detectan **{n_proxys:,} elementos** clasificados como `IfcBuildingElementProxy` "
                     "en los modelos seleccionados.\n\n"
                     "**Impacto BIM:** Un volumen elevado de proxies reduce la semántica del modelo y dificulta la extracción "
-                    "automatizada de mediciones (5D). Se recomienda reclasificar estos elementos a sus clases IFC nativas correspondientes "
-                    "(ej. `IfcWall`, `IfcSlab`, `IfcColumn`) antes de la entrega definitiva."
+                    "automatizada de mediciones (5D). Se recomienda reclasificar estos elementos a sus clases IFC nativas."
                 )
 
             elif any(k in p_low for k in ["recomendacion", "recomendación", "consejo", "mejorar", "corregir"]):
                 respuesta = (
                     "### 💡 Recomendaciones Estratégicas para la Dirección BIM\n"
-                    f"1. **Control de Naming:** Asegurar que el 100% de los archivos cumplan con el Anejo 02 (Revisar Pestaña 1).\n"
-                    f"2. **Mitigación de Vacíos:** Atacar de forma prioritaria los parámetros del Top 5 identificados en la Pestaña 5.\n"
+                    f"1. **Control de Naming:** Asegurar que el 100% de los archivos cumplan con el Anejo 02 (Pestaña 1).\n"
+                    f"2. **Mitigación de Vacíos:** Atacar de forma prioritaria los parámetros del Top 5 identificados (Pestaña 5).\n"
                     f"3. **Regla de Avance:** Actualmente mantienes **{len(sel_archivos)} modelos** frente al umbral de "
                     f"**{umbral_mes_anterior}**, cumpliendo con la política de no-regresión.\n"
-                    "4. **Exportación IFC:** Verificar que todas las exportaciones desde Revit incluyan los conjuntos de propiedades de la APV."
+                    "4. **Exportación IFC:** Verificar que todas las exportaciones desde Revit o Civil 3D incluyan los Property Sets de la APV."
                 )
 
             else:
@@ -1826,6 +1881,7 @@ with tab11:
             st.session_state.messages.append(
                 {"role": "assistant", "content": respuesta}
             )
+
 # --- PESTAÑA 12 ---
 with tab12:
     fecha_actual_str = datetime.now().strftime("%d/%m/%Y %H:%M")
@@ -2424,4 +2480,95 @@ with tab14:
                 "✅ Cero incoherencias en esta regla para los modelos seleccionados."
             )
 
-print("[DIAG FIN] Dashboard de 14 pestañas renderizado con éxito", flush=True)
+# --- PESTAÑA 15 ---
+with tab15:
+    st.subheader(
+        "📥 15. Exportación de Cuadro de Control de Entregables (XLSX) & Discernimiento de Software"
+    )
+    st.markdown(
+        "Genera y exporta un archivo en formato **XLSX** estructurado de forma idéntica a tu cuadro de control "
+        "de entregables de la APV. El motor **discierne automáticamente la tipología, el bloque de disciplina y "
+        "si el IFC proviene de Autodesk Revit o de Autodesk Civil 3D** analizando las clases semánticas."
+    )
+
+    # Construir el DataFrame de control de entregables tipo cuadro APV
+    filas_export_excel = []
+    for arch in archivos_disp:
+        sub_m = df_original.loc[df_original["Archivo_Origen"] == arch]
+        n_elem_mod = len(sub_m)
+        tipo_mod = discernir_tipo_modelo(arch, sub_m)
+        software_orig = discernir_software_origen(sub_m)
+        diag_bep = diagnosticar_nombre_bep(arch)
+        cumple_naming = "SÍ" if "✅" in diag_bep else "NO"
+        
+        # Calcular cumplimiento específico del modelo
+        if n_elem_mod > 0 and arch in matriz_presencia_nw.index:
+            s_p_mod = pres_all_arr[df_original["Archivo_Origen"] == arch].sum()
+            s_v_mod = vac_nw_all_arr[df_original["Archivo_Origen"] == arch].sum()
+            denom_m = max(1, s_p_mod + s_v_mod)
+            pct_mod = round((s_p_mod / denom_m) * 100, 1)
+        else:
+            pct_mod = 0.0
+
+        estado_aprobacion = "APROBADO" if pct_mod >= 95 and cumple_naming == "SÍ" else "REVISAR / SUBSANAR"
+
+        filas_export_excel.append({
+            "Archivo IFC": arch,
+            "Tipo de Modelo / Disciplina": tipo_mod,
+            "Software de Autoría Origen": software_orig,
+            "Elementos BIM": n_elem_mod,
+            "Cumple Naming BEP": cumple_naming,
+            "% Cumplimiento Parámetros APV": f"{pct_mod}%",
+            "Estado Control APV": estado_aprobacion
+        })
+
+    df_cuadro_apv = pd.DataFrame(filas_export_excel)
+    st.dataframe(df_cuadro_apv, use_container_width=True, hide_index=True)
+
+    # Función para generar archivo Excel en memoria con estilo
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        df_cuadro_apv.to_excel(writer, sheet_name="Cuadro_Control_APV", index=False)
+        workbook = writer.book
+        worksheet = writer.sheets["Cuadro_Control_APV"]
+        
+        # Formatos para Excel
+        header_format = workbook.add_format({
+            "bold": True,
+            "font_color": "white",
+            "bg_color": "#0f172a",
+            "align": "center",
+            "valign": "middle",
+            "border": 1
+        })
+        cell_format = workbook.add_format({
+            "align": "left",
+            "valign": "middle",
+            "border": 1
+        })
+        center_format = workbook.add_format({
+            "align": "center",
+            "valign": "middle",
+            "border": 1
+        })
+        
+        # Aplicar formato a cabeceras
+        for col_num, value in enumerate(df_cuadro_apv.columns.values):
+            worksheet.write(0, col_num, value, header_format)
+            
+        # Ajustar anchos de columnas
+        for i, col in enumerate(df_cuadro_apv.columns):
+            max_len = max(df_cuadro_apv[col].astype(str).map(len).max(), len(col)) + 4
+            worksheet.set_column(i, i, max_len)
+
+    excel_data = output.getvalue()
+
+    st.download_button(
+        label="📥 Descargar Cuadro de Control de Entregables (XLSX - Formato Oficial APV)",
+        data=excel_data,
+        file_name="Cuadro_Control_Entregables_APV_Auditado.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True
+    )
+
+print("[DIAG FIN] Dashboard de 15 pestañas renderizado con éxito", flush=True)
