@@ -298,6 +298,18 @@ RUTA_PARQUET = os.path.join(BASE_DIR, "resumen_ifc_consolidado.parquet")
 if not os.path.isfile(RUTA_PARQUET):
     st.error(f"No se encuentra el archivo: {RUTA_PARQUET}")
     st.stop()
+# --- EJECUCIÓN DEL MOTOR DE CACHÉ APV ---
+(
+    df_original, archivos_disp, df_informe_grupos,
+    pres_base_arr, vac_base_arr, pres_all_arr, vac_all_arr,
+    vac_nw_base_arr, vac_nw_all_arr, matriz_presencia_nw,
+    arch_codes_global, max_pres_modelo_arr
+) = inicializar_motor_apv(RUTA_PARQUET)
+
+# Detectar automáticamente si la columna de ID nativo es Revit (ExpressId) o Civil 3D (Handle)
+col_id_nativo = "ExpressId" if "ExpressId" in df_original.columns else "ID_Elemento"
+if col_id_nativo not in df_original.columns and len(df_original.columns) > 0:
+    col_id_nativo = df_original.columns[0]
 
 
 @st.cache_resource(show_spinner="Cargando e indexando base de datos BIM...")
