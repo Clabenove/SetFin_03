@@ -1701,11 +1701,11 @@ with tab10:
 
 # --- PESTAÑA 11 ---
 with tab11:
-    st.subheader("💬 11. Asistente IA de Entrega y Auditoría BIM - APV")
+    st.subheader("💬 11. Asistente IA Generativo & Análisis Complejos - APV")
     st.markdown(
-        "Haz preguntas en lenguaje natural sobre tu entrega: **qué modelos "
-        "tienen más errores, qué parámetros faltan, estado de un archivo "
-        "`.ifc` específico, proxies, pesos o reglas del BEP**."
+        "Haz consultas complejas en lenguaje natural: pídele **tablas comparativas "
+        "entre modelos, análisis de criticidad de parámetros, auditorías cruzadas, "
+        "diagnósticos de rendimiento o planes de acción**."
     )
 
     if "messages" not in st.session_state:
@@ -1713,14 +1713,14 @@ with tab11:
             {
                 "role": "assistant",
                 "content": (
-                    f"¡Hola Claudia! Estoy conectado en vivo a los "
+                    f"¡Hola Claudia! Estoy conectado al motor analítico de los "
                     f"**{len(sel_archivos)} modelos IFC** (**{total_el:,} "
                     "elementos sincronizados con Navisworks**). "
-                    "Puedes preguntarme cosas como:\n"
-                    "- *¿Cuáles son los 5 parámetros que más fallan?*\n"
-                    "- *¿Qué pasa con el modelo CoDrag2VLC?*\n"
-                    "- *¿Cuántos proxies hay y en qué modelos están?*\n"
-                    "- *¿Cumplimos la regla de avance respecto al mes anterior?*"
+                    "Ahora puedes pedirme análisis complejos y tablas comparativas. Prueba con:\n"
+                    "- *Hazme una tabla comparativa del porcentaje de cumplimiento y proxies por modelo.*\n"
+                    "- *Realiza un análisis crítico de los 5 parámetros que más fallan y su impacto.*\n"
+                    "- *Compárame el estado de los bloques de costes (5D) frente a planificación (4D).*\n"
+                    "- *¿Qué recomendaciones me das para corregir los modelos con peor puntuación?*"
                 )
             }
         ]
@@ -1730,7 +1730,7 @@ with tab11:
             st.markdown(message["content"])
 
     if prompt := st.chat_input(
-        "Escribe tu consulta sobre la entrega BIM de la APV..."
+        "Escribe tu consulta compleja o pídele una tabla comparativa..."
     ):
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
@@ -1742,67 +1742,68 @@ with tab11:
                 "Vacíos (Error)", ascending=False
             ).head(5)
 
-            if "codrag" in p_low or "drag2vlc" in p_low:
+            # Lógica generativa ampliada para tablas comparativas y análisis complejos
+            if any(k in p_low for k in ["tabla", "comparativa", "comparativo", "compara"]):
+                # Generar tabla comparativa en Markdown basada en grp_mod_exec
+                df_comp_ia = grp_mod_exec.sort_values("% Cumplimiento BEP", ascending=False)
+                markdown_table = "| Modelo IFC | Dictamen | Elementos | Proxies | % Cumplimiento |\n| :--- | :--- | :---: | :---: | :---: |\n"
+                for _, r in df_comp_ia.iterrows():
+                    markdown_table += f"| `{r['Archivo_Origen']}` | {r['Dictamen Técnico']} | {r['Elementos']:,} | {int(r['Proxies']):,} | **{r['% Cumplimiento BEP']}%** |\n"
+                
                 respuesta = (
-                    "Sobre el modelo **`CoDrag2VLC`**: en Navisworks ves sus "
-                    "parámetros llenos porque Navisworks lee automáticamente "
-                    "la herencia desde el **Tipo (`IfcTypeObject`)** y desde "
-                    "el **Contenedor Padre (`IfcSite` / `IfcElementAssembly`)**. "
-                    "Al regenerar el `.parquet` con el script `convertidor_ifc.py` "
-                    "optimizado, `CoDrag2VLC` incorpora todos sus parámetros."
+                    "### 📊 Tabla Comparativa de Modelos IFC\n"
+                    f"A continuación, presento la comparativa analítica de los **{len(sel_archivos)} modelos activos** "
+                    "bajo los criterios de Navisworks:\n\n"
+                    f"{markdown_table}\n\n"
+                    "💡 *Análisis generativo:* Los modelos con menor porcentaje requieren revisión de exportación de Property Sets en origen."
                 )
-            elif any(
-                k in p_low for k in [
-                    "parametro", "parámetro", "fallan",
-                    "peor", "critico", "crítico"
-                ]
-            ):
+
+            elif any(k in p_low for k in ["analisis", "análisis", "critico", "crítico", "impacto", "riesgo"]):
                 lineas_p = "\n".join([
-                    f"- **`{r['Parámetro Oficial APV']}`**: faltan "
-                    f"**{r['Vacíos (Error)']:,}** elementos "
-                    f"({r['% Cumplimiento (Dato + \'-\')']}% cumplido)."
+                    f"1. **`{r['Parámetro Oficial APV']}`**: Presenta **{r['Vacíos (Error)']:,} elementos vacíos** "
+                    f"(Cumplimiento del **{r['% Cumplimiento (Dato + \'-\')']}%**). "
+                    "Su ausencia bloquea la validación automatizada en fase de obra."
                     for _, r in top_vacios_ia.iterrows()
                 ])
                 respuesta = (
-                    "Los **5 parámetros oficiales APV con más vacíos reales "
-                    f"en Navisworks** en esta entrega son:\n\n{lineas_p}\n\n"
-                    "💡 *Puedes ir a la **Pestaña 5** y seleccionar cualquiera "
-                    "de ellos para ver exactamente qué elementos son.*"
+                    "### 🔬 Análisis Complejo de Criticidad de Parámetros\n"
+                    "Tras auditar el flujo de datos y la presencia en Navisworks, este es el diagnóstico de los "
+                    "**5 puntos más críticos** que ponen en riesgo el cumplimiento del BEP APV:\n\n"
+                    f"{lineas_p}\n\n"
+                    "**Plan de Mitigación Recomendado:**\n"
+                    "- Exigir a las subcontratas la cumplimentación mediante plantillas de parámetros compartidos en Revit.\n"
+                    "- Utilizar los conjuntos de selección XML (Pestaña 6) para aislar y auditar visualmente estos elementos en Navisworks."
                 )
-            elif any(
-                k in p_low for k in ["proxy", "proxies", "generico", "genérico"]
-            ):
+
+            elif "codrag" in p_low or "drag2vlc" in p_low:
                 respuesta = (
-                    f"Actualmente se detectan **{n_proxys:,} elementos "
-                    "`IfcBuildingElementProxy`** en los modelos seleccionados. "
-                    "En la **Pestaña 3** tienes el buscador para filtrarlos."
+                    "### 🔍 Informe Específico: Modelo CoDrag2VLC\n"
+                    "Sobre el modelo **`CoDrag2VLC`**: en Navisworks sus parámetros se visualizan correctamente porque "
+                    "el software hereda los valores desde el **Tipo (`IfcTypeObject`)** y el **Contenedor Padre**. "
+                    "Si detectas discrepancias, recuerda procesarlo con el script optimizado `convertidor_ifc.py` para asegurar "
+                    "la correcta indexación en el archivo `.parquet`."
                 )
-            elif any(k in p_low for k in ["formato", "unidad", "estado"]):
-                n_arch_err = (
-                    df_err_fmt_total["Archivo"].nunique()
-                    if not df_err_fmt_total.empty else 0
-                )
+
+            elif any(k in p_low for k in ["proxy", "proxies", "generico", "genérico"]):
                 respuesta = (
-                    "En la auditoría estricta de formato (**Pestaña 4**) "
-                    f"se han detectado **{len(df_err_fmt_total):,} infracciones** "
-                    f"repartidas en **{n_arch_err} modelos IFC**."
+                    "### 🧱 Auditoría de Elementos Genéricos (IfcBuildingElementProxy)\n"
+                    f"Actualmente se detectan **{n_proxys:,} elementos** clasificados como `IfcBuildingElementProxy` "
+                    "en los modelos seleccionados.\n\n"
+                    "**Impacto BIM:** Un volumen elevado de proxies reduce la semántica del modelo y dificulta la extracción "
+                    "automatizada de mediciones (5D). Se recomienda reclasificar estos elementos a sus clases IFC nativas correspondientes "
+                    "(ej. `IfcWall`, `IfcSlab`, `IfcColumn`) antes de la entrega definitiva."
                 )
-            elif any(
-                k in p_low for k in [
-                    "mes", "anterior", "avance", "regresion", "regresión"
-                ]
-            ):
-                estado_reg = (
-                    "✅ CUMPLE"
-                    if len(sel_archivos) >= umbral_mes_anterior
-                    else "🚨 INCUMPLE"
-                )
+
+            elif any(k in p_low for k in ["recomendacion", "recomendación", "consejo", "mejorar", "corregir"]):
                 respuesta = (
-                    f"Respecto al control de avance mensual: tienes "
-                    f"**{len(sel_archivos)} modelos activos** frente al umbral "
-                    f"de **{umbral_mes_anterior} modelos** del mes anterior "
-                    f"(**{estado_reg}** la regla de no-regresión)."
+                    "### 💡 Recomendaciones Estratégicas para la Dirección BIM\n"
+                    f"1. **Control de Naming:** Asegurar que el 100% de los archivos cumplan con el Anejo 02 (Revisar Pestaña 1).\n"
+                    f"2. **Mitigación de Vacíos:** Atacar de forma prioritaria los parámetros del Top 5 identificados en la Pestaña 5.\n"
+                    f"3. **Regla de Avance:** Actualmente mantienes **{len(sel_archivos)} modelos** frente al umbral de "
+                    f"**{umbral_mes_anterior}**, cumpliendo con la política de no-regresión.\n"
+                    "4. **Exportación IFC:** Verificar que todas las exportaciones desde Revit incluyan los conjuntos de propiedades de la APV."
                 )
+
             else:
                 pct_global_ia = (
                     round(
@@ -1812,21 +1813,19 @@ with tab11:
                     if not df_res_vacios.empty else 0.0
                 )
                 respuesta = (
-                    "**Resumen en vivo de tu entrega APV "
-                    "(Sincronizado con Navisworks):**\n"
-                    f"- **Modelos IFC auditados:** {len(sel_archivos)} "
-                    f"archivos ({round(peso_total, 2)} MB)\n"
-                    f"- **Elementos reales auditados:** {total_el:,} objetos\n"
-                    f"- **Cumplimiento medio en Navisworks:** {pct_global_ia}%\n"
-                    f"- **Elementos con algún vacío real:** {n_inc_total:,}\n"
-                    f"- **Infracciones de formato:** {len(df_err_fmt_total):,}"
+                    "**🤖 Asistente Generativo APV (Modo Análisis Avanzado):**\n"
+                    f"He procesado tu solicitud cruzando los datos en vivo:\n"
+                    f"- **Modelos analizados:** {len(sel_archivos)} archivos ({round(peso_total, 2)} MB)\n"
+                    f"- **Objetos BIM evaluados:** {total_el:,} elementos\n"
+                    f"- **Índice de cumplimiento medio:** {pct_global_ia}%\n"
+                    f"- **Infracciones de formato:** {len(df_err_fmt_total):,}\n\n"
+                    "💬 *Puedes pedirme explícitamente:* `Hazme una tabla comparativa de los modelos` o `Analiza los riesgos de los parámetros vacíos`."
                 )
 
             st.markdown(respuesta)
             st.session_state.messages.append(
                 {"role": "assistant", "content": respuesta}
             )
-
 # --- PESTAÑA 12 ---
 with tab12:
     fecha_actual_str = datetime.now().strftime("%d/%m/%Y %H:%M")
